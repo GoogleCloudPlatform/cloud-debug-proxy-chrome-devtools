@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+        font-size: 10px;
+        color: #222222;
+      }
+      h1 {
+        font-size: 12px;
+        font-weight: normal;
+      }
+      input {
+        font-size: inherit;
+      }
+      ul {
+        margin: 10px 0;
+        padding: 0;
+        list-style-type: none;
+      }
+      li {
+        width: 100%;
+        cursor: pointer;
+      }
+      li.selected {
+        background-color: #2196f3;
+      }
+      li:hover {
+        background-color: #03a9f4;
+      }
+      #explorer {
+        display: none;
+      }
+      #port {
+        width: 5em;
+      }
+      #error {
+        color: red;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="init">
+      <h1>
+        WebSocket URL:
+      </h1>
+      <form id="form">
+        <label for="port">
+          ws://localhost:
+        </label>
+        <input id="port" name="port" type="number" value="9230" />
+        <input id="submit" type="submit" />
+      </form>
+    </div>
+    <div id="explorer">
+      <h1>
+        Captured Snapshots:
+      </h1>
+      <ul id="captured">
+      </ul>
+      <h1>
+        Pending Breakpoints:
+      </h1>
+      <ul id="pending">
+      </ul>
+    </div>
+    <div id="error">
+    </div>
+  </body>
+</html>

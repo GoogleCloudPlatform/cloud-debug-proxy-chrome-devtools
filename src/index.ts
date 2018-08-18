@@ -25,14 +25,15 @@ import * as winston from 'winston';
 import {Adapter} from './adapter';
 import {setupLogger} from './logger';
 import {serveHttp} from './http-server';
-import {serveWebSocket} from './websocket-server';
+import {serveDevTools, serveExtension} from './websocket-server';
 
 export {Adapter} from './adapter';
 
 const pkg = require('../../package.json');
 
 const DEFAULT_SOURCE_DIRECTORY = './';
-const DEFAULT_PORT = '9229';
+const DEFAULT_PORT_DEVTOOLS = '9229';
+const DEFAULT_PORT_EXTENSION = '9230';
 const MINIMUM_PORT = 0;
 const MAXIMUM_PORT = 65535;
 const DEFAULT_LOGFILE = 'cloud-debug-proxy-devtools.log';
@@ -48,20 +49,21 @@ const cli = meow(
     --project     The project ID in Google Cloud, if keyfile is not specified.
     --default     Set this to true to use Application Default Credentials.
     --source      Path to the root directory containing all the source code.
-    --port        Port to connect to for WebSocket communication.
+    --dport       WebSocket port to connect the proxy to Chrome DevTools.
+    --eport       WebSocket port to connect the proxy to the Chrome extension.
     --debuggee    The debuggee ID in Google Cloud Platform.
     --logfile     An optional file to append logging output to.
     --loglevel    The minimum severity to be logged. Must be one of:
                   'error', 'warn', 'info', 'verbose', 'debug', 'silly'.
 
   Examples
-    $ cloud-debug-nodejs-devtools --port=9229 \\
+    $ cloud-debug-nodejs-devtools --dport=9229 --eport=9230 \\
     >   --keyfile=~/keys/my-cloud-project-31415926-a6512b47d6a0.json \\
     >   --source=~/projects/awesome_google_cloud_app
     >   --debuggee=gcp:51384539673:e75dfe61457b23bc
     >   --logfile=~/stackdriver.log --loglevel=info
 
-    $ cloud-debug-nodejs-devtools --default --port=9229 \\
+    $ cloud-debug-nodejs-devtools --default --dport=9229 --eport=9230 \\
     >   --debuggee=gcp:51384539673:e75dfe61457b23bc
 `,
     {
@@ -70,7 +72,8 @@ const cli = meow(
         project: {type: 'string'},
         default: {type: 'boolean'},
         source: {type: 'string'},
-        port: {type: 'string'},
+        dport: {type: 'string'},
+        eport: {type: 'string'},
         debuggee: {type: 'string'},
         logfile: {type: 'string'},
         loglevel: {type: 'string'},
@@ -86,10 +89,30 @@ function validatePort(portString: string): boolean {
       portNumber >= MINIMUM_PORT && portNumber <= MAXIMUM_PORT;
 }
 
+async function promptForPort(
+    message: string, defaultPortString: string): Promise<number> {
+  const answers = await inquirer.prompt({
+    type: 'input',
+    name: 'port',
+    message,
+    default: defaultPortString,
+    validate: (portString: string): true | string => {
+      if (validatePort(portString)) {
+        return true;
+      } else {
+        return 'Please enter a valid port number, between ' +
+            `${MINIMUM_PORT} and ${MAXIMUM_PORT} inclusive.`;
+      }
+    },
+  } as inquirer.Question);
+  return Number(answers.port);
+}
+
 async function main(logger: winston.Logger) {
   updateNotifier({pkg}).notify();
 
-  let portNumber: number;
+  let devtoolsPortNumber: number;
+  let extensionPortNumber: number;
   let sourceDirectory: string;
 
   if ((cli.flags.keyfile && cli.flags.project) ||
@@ -147,24 +170,31 @@ async function main(logger: winston.Logger) {
     await debugProxy.setProjectByKeyFile(answers.keyfile.trim());
   }
 
-  if (validatePort(cli.flags.port)) {
-    portNumber = Number(cli.flags.port);  // Validated by `validatePort`.
+  // These casts with `Number` were already validated with `validatePort`.
+  if (validatePort(cli.flags.dport)) {
+    devtoolsPortNumber = Number(cli.flags.dport);
   } else {
-    const answers = await inquirer.prompt({
-      type: 'input',
-      name: 'port',
-      message: 'Port for WebSocket communication:',
-      default: DEFAULT_PORT,
-      validate: (portString: string): true | string => {
-        if (validatePort(portString)) {
-          return true;
-        } else {
-          return 'Please enter a valid port number, between ' +
-              `${MINIMUM_PORT} and ${MAXIMUM_PORT} inclusive.`;
-        }
-      },
-    } as inquirer.Question);
-    portNumber = Number(answers.port);  // Validated by `validatePort`.
+    devtoolsPortNumber = await promptForPort(
+        'WebSocket port to connect the proxy to Chrome DevTools:',
+        DEFAULT_PORT_DEVTOOLS);
+  }
+
+  if (validatePort(cli.flags.eport) &&
+      Number(cli.flags.eport) !== devtoolsPortNumber) {
+    extensionPortNumber = Number(cli.flags.eport);
+  } else {
+    extensionPortNumber = await promptForPort(
+        'WebSocket port to connect the proxy to the extension:',
+        DEFAULT_PORT_EXTENSION);
+    while (extensionPortNumber === devtoolsPortNumber) {
+      logger.info({
+        origin: 'devtools-main',
+        message: `Please choose any port other than ${devtoolsPortNumber}.`,
+      });
+      extensionPortNumber = await promptForPort(
+          'WebSocket port to connect the proxy to the extension:',
+          DEFAULT_PORT_EXTENSION);
+    }
   }
 
   logger.info({
@@ -211,8 +241,9 @@ async function main(logger: winston.Logger) {
   }
 
   const adapter = new Adapter(debugProxy);
-  const server = serveHttp(portNumber);
-  serveWebSocket(server, adapter);
+  const server = serveHttp(devtoolsPortNumber);
+  serveDevTools(server, adapter);
+  serveExtension(extensionPortNumber, adapter);
 }
 
 if (require.main === module) {
