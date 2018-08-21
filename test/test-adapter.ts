@@ -87,7 +87,7 @@ describe('adapter.ts', () => {
       debuggerId: DEBUGGER_ID,
       sourceDirectory: SOURCE_DIRECTORY,
     });
-    await debugProxy.setProjectByKeyFile();
+    await debugProxy.setProjectByKeyFile('./test/fixtures/keyfile.json');
     await debugProxy.setDebuggeeId(DEBUGGEE_ID);
     adapter = new devtools.Adapter(debugProxy);
   });
