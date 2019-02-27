@@ -47,7 +47,7 @@
   },
   "dependencies": {
     "@google-cloud/debug-proxy-common": "^0.2.1",
-    "globby": "^8.0.1",
+    "globby": "^9.0.0",
     "hard-rejection": "^1.0.0",
     "inquirer": "^6.1.0",
     "meow": "^5.0.0",
