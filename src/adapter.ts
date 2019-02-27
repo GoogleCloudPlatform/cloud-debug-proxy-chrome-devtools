@@ -79,6 +79,11 @@ export interface MessageEvent {
   params?: {}|Debugger.PausedEventDataType|Debugger.ScriptParsedEventDataType;
 }
 
+interface BreakpointInfo {
+  name: string;
+  id: string;
+}
+
 // https://chromedevtools.github.io/devtools-protocol/tot/Runtime#type-RemoteObject
 const REMOTE_OBJECT_SUBTYPE_SET = new Set<string>([
   'array',
@@ -123,6 +128,8 @@ const STATUS_MESSAGE_SET = new Set<string>(
  * https://chromedevtools.github.io/devtools-protocol/
  *
  * @fires 'resume' when DevTools sends a resume request
+ * @fires 'loadSnapshot' when users request a snapshot
+ * @fires 'updateBreakpointList' when the breakpoint list changes
  */
 export class Adapter extends EventEmitter {
   // TODO: get() does not exist yet, will be resolved in Winston 3.1
@@ -136,6 +143,13 @@ export class Adapter extends EventEmitter {
     super();
     this.logger.verbose(
         {origin: 'adapter-init', message: 'Adapter successfully initialized.'});
+    this.debugProxy.on('breakpointHit', () => {
+      this.logger.verbose({
+        origin: 'adapter-hit',
+        message: 'Breakpoint list changed.',
+      });
+      this.emitUpdateBreakpointList();
+    });
   }
 
   private devToolsToStackdriverLine(line: ZeroIndexedLineNumber):
@@ -149,6 +163,14 @@ export class Adapter extends EventEmitter {
       throw new Error(`Given Stackdriver line number ${line} is not possible.`);
     }
     return line - 1;
+  }
+
+  private breakpointToBreakpointInfo(breakpoint: stackdriver.Breakpoint):
+      BreakpointInfo {
+    return {
+      name: `${breakpoint.location.path}:${breakpoint.location.line}`,
+      id: breakpoint.id,
+    };
   }
 
   private nonNull<T>(value: T|null): value is T {
@@ -276,6 +298,25 @@ export class Adapter extends EventEmitter {
     return this.debugProxy.options.sourceDirectory;
   }
 
+  /** @fires 'loadSnapshot' with the given snapshot ID */
+  emitLoadSnapshot(snapshotId: stackdriver.BreakpointId) {
+    this.emit('loadSnapshot', snapshotId);
+  }
+
+  /** @fires 'updateBreakpointList' with the current breakpoint info lists */
+  emitUpdateBreakpointList() {
+    const pendingBreakpointInfoList: BreakpointInfo[] =
+        this.debugProxy.getBreakpointList(false).map(
+            this.breakpointToBreakpointInfo);
+    const capturedSnapshotInfoList: BreakpointInfo[] =
+        this.debugProxy.getBreakpointList(true).map(
+            this.breakpointToBreakpointInfo);
+    this.emit('updateBreakpointList', {
+      pendingBreakpointInfoList,
+      capturedSnapshotInfoList,
+    });
+  }
+
   /**
    * Processes requests from Chrome DevTools.
    *
@@ -327,6 +368,7 @@ export class Adapter extends EventEmitter {
               condition: setBreakpointByUrlRequest.condition,
             });
           }
+          this.emitUpdateBreakpointList();
           return {
             breakpointId: breakpoint.id,
             locations: [{
