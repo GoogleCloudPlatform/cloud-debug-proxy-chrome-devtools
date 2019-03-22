@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@types/globby": "^8.0.0",
-    "@types/inquirer": "0.0.44",
+    "@types/inquirer": "6.0.0",
     "@types/meow": "^5.0.0",
     "@types/mocha": "^5.2.5",
     "@types/nock": "^9.3.0",
